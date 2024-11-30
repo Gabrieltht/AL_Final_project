@@ -95,11 +95,14 @@ class CNN_attention_model(nn.Module):
         self.fcs = nn.ModuleList()
         
         self.layers.append(CNN_attention_block(3,inter_channels,inter_channels))
+        
         for i in range(1,depth):
             self.layers.append(CNN_attention_block(inter_channels*(2**i),inter_channels*(2**i),inter_channels*(2**(i+1))))
+        
         for j in range(1,depth+1):
             feature_size = inter_channels*(2**(i+1))*(128/(2**depth))**2 / 2**j
             self.fcs.append(nn.Linear(feature_size,feature_size//2))
+        
         self.fcs.append(nn.Linear(feature_size//2,7))
             
         
@@ -114,5 +117,10 @@ class CNN_attention_model(nn.Module):
             x = fc(x)  
             
         return x
-            
     
+    def predict(self,logits):
+        
+        probs = F.softmax(logits,dim=1)
+        labels = torch.argmax(probs,dim=1)
+        
+        return labels
