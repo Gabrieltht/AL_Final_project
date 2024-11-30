@@ -2,10 +2,44 @@ import os
 import pandas as pd
 import cv2
 import numpy as np
-from sklearn.model_selection import train_test_split
+import torch
+from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import OneHotEncoder
 
-def add_noise(image):
+class faceImg(Dataset):
+    def __init__(self, dataPath, imageDir, transorm=None):
+        self.data = pd.read_csv(dataPath).dropna()
+        self.imageDir = imageDir
+        self.transform = transorm
+        self.oneHotEncoder = OneHotEncoder(sparse_output=False)
+        self.labels = self.oneHotEncoder.fit_transform(self.data['class'].values.reshape(-1, 1))
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        img_name = os.path.join(self.imageDir, self.data.iloc[idx]['filename'])
+        image = cv2.imread(img_name)
+        image = cv2.resize(image, (128, 128))
+        image = image / 255.0 # normalize
+        # horizontal flip
+        image = cv2.flip(image, 1) 
+
+        if self.transform:
+            image = self.transform(image)
+        label = self.labels[idx]
+        return image, label
+
+
+def adversarial_noise(image, img_gradient, epsilon = 0.1): # defualt noise
+    sign_data_gradient = img_gradient.sign()
+    noisy_image = image + epsilon * sign_data_gradient
+    noisy_image = torch.clamp(noisy_image, 0, 1)
+    return noisy_image
+
+def gaussian_noise(image): # usable
     std = 0.1
     mean = 0
     noise = np.random.normal(mean, std, image.shape)
@@ -14,42 +48,15 @@ def add_noise(image):
 
 
 def preprocess(dataPath, imageDir):
-    data = pd.read_csv(dataPath)
-    data = data.dropna()
-
-    # take image name from data and load it into list
-    image_paths = data['filename'].apply(lambda x: os.path.join(imageDir, x)).values
-    labels = data['class'].values
-
-    # OneHot Encoding on labels
-    encoder = OneHotEncoder(sparse_output=False)
-    labels = encoder.fit_transform(labels.reshape(-1, 1))
-
-    # load img
-    images = []
-    for path in image_paths:
-        try:
-            img = cv2.imread(path)
-            img = cv2.resize(img, (128, 128))
-            #normalize
-            img = img / 255.0
-            # add noise
-            img = add_noise(img)
-            # horizontal flip
-            img = cv2.flip(img, 1) 
-            images.append(img)
-        except Exception as e:
-            print("There is problem loading image ----> ", str(e))
-    
-    images = np.array(images)
-
-    print(images)
-    print(images.shape)
-    print(labels)
-    print(labels.shape)
-    return images, labels
+    batch_size = 32 # changable <<<<<<<<<<-------------
+    dataset = faceImg(dataPath, imageDir)
+    dataLoader = DataLoader(dataset, batch_size, shuffle = True)
+    return dataLoader
 
 
 dataPath = "Data/train/_annotations.csv"
 imageDir = "Data/train/"
-preprocess(dataPath, imageDir)
+data = preprocess(dataPath, imageDir)
+
+for images, labels in data:
+    print(images.shape, labels.shape)
