@@ -47,10 +47,10 @@ def gaussian_noise(image): # usable
     return np.clip(imgWithNoise, 0, 1)
 
 
-def preprocess(dataPath, imageDir):
-    batch_size = 32 # changable <<<<<<<<<<-------------
+def preprocess(dataPath, imageDir, batch_size = 32): # <<<<---
     dataset = faceImg(dataPath, imageDir)
     dataLoader = DataLoader(dataset, batch_size, shuffle = True)
+    # print(dataLoader)
     return dataLoader
 
 
@@ -58,5 +58,5 @@ dataPath = "Data/train/_annotations.csv"
 imageDir = "Data/train/"
 data = preprocess(dataPath, imageDir)
 
-for images, labels in data:
-    print(images.shape, labels.shape)
+# for images, labels in data:
+#     print(images.shape, labels.shape)
