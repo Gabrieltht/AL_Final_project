@@ -67,8 +67,8 @@ class CNN_attention_block(nn.Module):
     
     def __init__(self, in_cn,mid_cn,out_cn):
         super(CNN_attention_block, self).__init__()
-        self.cnn_11 = CNN_layer(in_cn,mid_cn,mid_cn)
-        self.cnn_12 = CNN_layer(mid_cn,mid_cn,out_cn)
+        self.cnn_11 = CNN_layer(in_cn,mid_cn,out_cn)
+        # self.cnn_12 = CNN_layer(mid_cn,mid_cn,out_cn)
         self.pool = nn.MaxPool2d(kernel_size=2)
         self.attention = Self_Attention_layer(out_cn)
     
@@ -76,7 +76,7 @@ class CNN_attention_block(nn.Module):
         
         x = self.cnn_11(x)
         
-        x = self.cnn_12(x)
+        # x = self.cnn_12(x)
         
         x = self.attention(x)
         
@@ -99,7 +99,7 @@ class CNN_attention_model(nn.Module):
         self.layers.append(CNN_attention_block(3,inter_channels,inter_channels))
         
         for i in range(0,depth):
-            self.layers.append(CNN_attention_block(inter_channels*(2**i),inter_channels*(2**(i)),inter_channels*(2**(i+1))))
+            self.layers.append(CNN_attention_block(inter_channels*(2**i),inter_channels*(2**(i+1)),inter_channels*(2**(i+1))))
         
         for j in range(1,depth+1):
             feature_size = inter_channels*(2**(i+1))*(128//(2**depth))**2 // 2**(j+1)
@@ -107,6 +107,46 @@ class CNN_attention_model(nn.Module):
             self.fcs.append(nn.Dropout(p=0.2))  # Add dropout
 
         self.fcs.append(nn.Linear(feature_size//2,7))
+            
+        
+        
+    def forward(self,x):
+        for layer in self.layers:
+            x = layer(x)  
+        
+        x = torch.flatten(x, start_dim=1)
+        
+        for fc in self.fcs:
+            x = fc(x)  
+            
+        return x
+    
+    def predict(self,logits):
+        
+        probs = F.softmax(logits,dim=1)
+        labels = torch.argmax(probs,dim=1)
+        
+        return labels
+    
+class CNN_attention_model_S(nn.Module):
+    def __init__(self):
+        """
+        inter_channels: Number of intermediate channels
+        depth: number of cnn_attention_blocks
+        assume image is 3 * 128 * 128, target is 7 labels
+        """
+        super(CNN_attention_model_S,self).__init__()
+        self.layers = nn.ModuleList()
+        self.fcs = nn.ModuleList()
+        
+        self.layers.append(CNN_attention_block(3,16,32))
+        self.layers.append(CNN_attention_block(32,64,64))
+        self.layers.append(CNN_attention_block(64,128,128))
+        self.layers.append(CNN_attention_block(128,128,256))
+        self.fcs.append(nn.Linear(16384,8192,bias=True))
+        self.fcs.append(nn.Linear(8192,2048,bias=True))
+        self.fcs.append(nn.Linear(2048,512,bias=True))
+        self.fcs.append(nn.Linear(512,7,bias=True))
             
         
         

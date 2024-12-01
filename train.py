@@ -5,7 +5,7 @@ import argparse
 import os
 import logging
 from preprocess import *
-from model import CNN_attention_model
+from model import CNN_attention_model,CNN_attention_model_S
 import sklearn
 from sklearn.metrics import accuracy_score
 
@@ -14,13 +14,13 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--model', type=str, default='CNN_attention', help="Name of model")
-    parser.add_argument('--epochs', type=int, default=100, help="Number of training epochs")
+    parser.add_argument('--epochs', type=int, default=400, help="Number of training epochs")
     parser.add_argument('--lr', type=float, default=0.001, help="Learning rate for the optimizer ")
-    parser.add_argument('--momentum', type=float, default=0.9, help="momentum for SGD optimizer")
+    parser.add_argument('--momentum', type=float, default=0.99, help="momentum for SGD optimizer")
     parser.add_argument('--batch_size', type=int, default=4, help="Batch size for training")
     parser.add_argument('--use_gpu', type=bool, default=True, help="Flag to use GPU if available")
-    parser.add_argument('--depth', type=int, default=3, help="Depth of model")
-    parser.add_argument('--inter_channel', type=int, default=4, help="Channel of intermediate layers") # 16 before
+    parser.add_argument('--depth', type=int, default=2, help="Depth of model")
+    parser.add_argument('--inter_channel', type=int, default=16, help="Channel of intermediate layers") 
     parser.add_argument('--train_data_path', type=str, default='./Data/train', help="Train dataset path")
     parser.add_argument('--validation_data_path', type=str, default='./Data/valid', help="Validation dataset path")
     parser.add_argument('--test_data_path', type=str, default='./Data/test', help="Test dataset path")
@@ -57,17 +57,17 @@ def main():
 
 
     # Initialize model, loss function, and optimizer
-    model = CNN_attention_model(depth=args.depth, inter_channels=args.inter_channel).to(device)  # Move model to device
+    model = CNN_attention_model_S().to(device)  # Move model to device
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     # # Load checkpoint TODO
-    # if args.if_pretrain:
-    #     checkpoint = torch.load("checkpoint.pth")
-    #     model.load_state_dict(checkpoint['model_state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    #     start_epoch = checkpoint['epoch'] + 1
-    #     loss = checkpoint['loss']
+    if args.if_pretrain:
+        checkpoint = torch.load("checkpoint.pth")
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # start_epoch = checkpoint['epoch'] + 1
+        # loss = checkpoint['loss']
 
     # Train loop
     best_acc = 0
@@ -77,6 +77,7 @@ def main():
         model.train()  
         total_loss = 0
         total_samples = 0   
+        total_correct = 0
 
         for imgs, labels in train_loader:
             
@@ -91,15 +92,20 @@ def main():
             loss.backward()
             
             optimizer.step()
-
+            
+            predictions = model.predict(outputs)
+            labels = torch.argmax(labels, dim=1)
+            total_correct += (predictions == labels).sum().item()
             total_loss += loss.item()
             total_samples += args.batch_size
 
         # Calculate average loss
+        train_accuracy = total_correct / total_samples
         average_loss = total_loss / total_samples
-        logging.info(f"Epoch {epoch+1} - Loss: {average_loss:.4f}")
+        logging.info(f"train accuracy after Epoch {epoch+1}: {train_accuracy:.4f}")
+        logging.info(f"Epoch {epoch+1} - train Loss: {average_loss:.4f}")
 
-        if epoch // 10 == 0:
+        if epoch % 50 == 0:
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
