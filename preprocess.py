@@ -5,12 +5,15 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import OneHotEncoder
+from torchvision.transforms import Compose, ToTensor, Lambda
+
+
 
 class faceImg(Dataset):
-    def __init__(self, dataPath, imageDir, transorm=None):
+    def __init__(self, dataPath, imageDir, transform=None):
         self.data = pd.read_csv(dataPath).dropna()
         self.imageDir = imageDir
-        self.transform = transorm
+        self.transform = transform
         self.oneHotEncoder = OneHotEncoder(sparse_output=False)
         self.labels = self.oneHotEncoder.fit_transform(self.data['class'].values.reshape(-1, 1))
     
@@ -25,8 +28,8 @@ class faceImg(Dataset):
         image = cv2.resize(image, (128, 128))
         image = image / 255.0 # normalize
         # horizontal flip
-        image = cv2.flip(image, 1) 
-
+        # image = cv2.flip(image, 1) 
+        image = gaussian_noise(image) 
         if self.transform:
             image = self.transform(image)
         label = self.labels[idx]
@@ -47,16 +50,20 @@ def gaussian_noise(image): # usable
     return np.clip(imgWithNoise, 0, 1)
 
 
-def preprocess(dataPath, imageDir, batch_size = 32): # <<<<---
-    dataset = faceImg(dataPath, imageDir)
-    dataLoader = DataLoader(dataset, batch_size, shuffle = True)
+def preprocess(dataPath, imageDir, batch_size = 32,drop_last = False): # <<<<---
+    transform = Compose([
+        ToTensor(),  
+        Lambda(lambda x: x.float()) 
+        ])
+    dataset = faceImg(dataPath, imageDir,transform)
+    dataLoader = DataLoader(dataset, batch_size, shuffle = True,drop_last=drop_last)
     # print(dataLoader)
     return dataLoader
 
 
-dataPath = "Data/train/_annotations.csv"
-imageDir = "Data/train/"
-data = preprocess(dataPath, imageDir)
+# dataPath = "Data/train/_annotations.csv"
+# imageDir = "Data/train/"
+# data = preprocess(dataPath, imageDir)
 
 # for images, labels in data:
 #     print(images.shape, labels.shape)
