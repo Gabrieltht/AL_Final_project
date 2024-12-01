@@ -8,12 +8,14 @@ class CNN_layer(nn.Module):
         super(CNN_layer, self).__init__()
         
         self.conv_layer1 = nn.Sequential(
-            nn.Conv2d(in_channels=in_cn, out_channels=mid_cn, kernel_size=3,stride = 1, padding = 1),
+            nn.Conv2d(in_channels=in_cn, out_channels=mid_cn, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(mid_cn),  
             nn.ReLU(),
-            nn.Conv2d(in_channels=mid_cn, out_channels=out_cm, kernel_size=3,stride = 1, padding = 1),
+            nn.Conv2d(in_channels=mid_cn, out_channels=out_cm, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(out_cm),  
             nn.ReLU()
         )
-        self.pool = nn.MaxPool2d(kernel_size=2)
+
         
     def forward(self,x):
         
@@ -101,8 +103,9 @@ class CNN_attention_model(nn.Module):
         
         for j in range(1,depth+1):
             feature_size = inter_channels*(2**(i+1))*(128//(2**depth))**2 // 2**(j+1)
-            self.fcs.append(nn.Linear(feature_size,feature_size//2))
-        
+            self.fcs.append(nn.Linear(feature_size, feature_size // 2))
+            self.fcs.append(nn.Dropout(p=0.2))  # Add dropout
+
         self.fcs.append(nn.Linear(feature_size//2,7))
             
         
