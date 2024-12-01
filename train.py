@@ -17,10 +17,10 @@ def main():
     parser.add_argument('--epochs', type=int, default=100, help="Number of training epochs")
     parser.add_argument('--lr', type=float, default=0.001, help="Learning rate for the optimizer ")
     parser.add_argument('--momentum', type=float, default=0.9, help="momentum for SGD optimizer")
-    parser.add_argument('--batch_size', type=int, default=1, help="Batch size for training")
+    parser.add_argument('--batch_size', type=int, default=4, help="Batch size for training")
     parser.add_argument('--use_gpu', type=bool, default=True, help="Flag to use GPU if available")
     parser.add_argument('--depth', type=int, default=3, help="Depth of model")
-    parser.add_argument('--inter_channel', type=int, default=16, help="Channel of intermediate layers")
+    parser.add_argument('--inter_channel', type=int, default=4, help="Channel of intermediate layers") # 16 before
     parser.add_argument('--train_data_path', type=str, default='./Data/train', help="Train dataset path")
     parser.add_argument('--validation_data_path', type=str, default='./Data/valid', help="Validation dataset path")
     parser.add_argument('--test_data_path', type=str, default='./Data/test', help="Test dataset path")
@@ -51,7 +51,7 @@ def main():
     # Load data
     train_data_path = os.path.join(args.train_data_path, "_annotations.csv")
     validation_data_path = os.path.join(args.validation_data_path, "_annotations.csv")
-    test_data_path = os.path.join(args.test_data_path, "_annotations.csv")
+    # test_data_path = os.path.join(args.test_data_path, "_annotations.csv")
     train_loader = preprocess(train_data_path, args.train_data_path, batch_size=args.batch_size,drop_last=True)
     valid_loader = preprocess(validation_data_path, args.validation_data_path, batch_size=args.batch_size,drop_last=True)
 
@@ -62,16 +62,18 @@ def main():
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 
     # # Load checkpoint TODO
-    # checkpoint = torch.load("checkpoint.pth")
-    # model.load_state_dict(checkpoint['model_state_dict'])
-    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    # start_epoch = checkpoint['epoch'] + 1
-    # loss = checkpoint['loss']
+    # if args.if_pretrain:
+    #     checkpoint = torch.load("checkpoint.pth")
+    #     model.load_state_dict(checkpoint['model_state_dict'])
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     start_epoch = checkpoint['epoch'] + 1
+    #     loss = checkpoint['loss']
 
     # Train loop
     best_acc = 0
     for epoch in range(args.epochs):
         logging.info(f"Epoch {epoch+1}/{args.epochs}")
+
         model.train()  
         total_loss = 0
         total_samples = 0   
@@ -119,6 +121,7 @@ def main():
                 val_loss += loss_fn(outputs, labels).item()
                 val_sample += args.batch_size
                 predictions = model.predict(outputs)
+                labels = torch.argmax(labels, dim=1)
                 total_correct += (predictions == labels).sum().item()
                 total_samples += labels.size(0)
             
@@ -133,11 +136,10 @@ def main():
                     'optimizer_state_dict': optimizer.state_dict(),
                     'loss': loss,
                 }, os.path.join(args.ckp_path,'best',f"{args.model}_acc_{best_acc:.2f}.pth") )
+            logging.info(f"Validation Loss after Epoch {epoch+1}: {avg_val_loss:.4f}")
+            logging.info(f"Validation accuracy after Epoch {epoch+1}: {accuracy:.4f}")
+            
 
-        logging.info(f"Validation accuracy after Epoch {epoch+1}: {accuracy:.4f}")
-        logging.info(f"Validation Loss after Epoch {epoch+1}: {avg_val_loss:.4f}")
-
-    
     logging.info("Training completed successfully!")
     
     
