@@ -4,8 +4,10 @@ import torch.nn.functional as F
 import argparse
 import os
 import logging
+
+import torch.optim.adam
 from preprocess import *
-from model import CNN_attention_model,CNN_attention_model_S
+from model import Advanced_CNN_Attention_Model,CNN_attention_model_S,CNN_attention_res_model
 import sklearn
 from sklearn.metrics import accuracy_score
 
@@ -13,20 +15,21 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--model', type=str, default='CNN_attention', help="Name of model")
+    parser.add_argument('--model', type=str, default='Advanced_CNN_Attention', help="Name of model")
     parser.add_argument('--epochs', type=int, default=400, help="Number of training epochs")
-    parser.add_argument('--lr', type=float, default=0.001, help="Learning rate for the optimizer ")
+    parser.add_argument('--lr', type=float, default=1e-5, help="Learning rate for the optimizer ")
     parser.add_argument('--momentum', type=float, default=0.99, help="momentum for SGD optimizer")
     parser.add_argument('--batch_size', type=int, default=4, help="Batch size for training")
     parser.add_argument('--use_gpu', type=bool, default=True, help="Flag to use GPU if available")
     parser.add_argument('--depth', type=int, default=2, help="Depth of model")
     parser.add_argument('--inter_channel', type=int, default=16, help="Channel of intermediate layers") 
-    parser.add_argument('--train_data_path', type=str, default='./Data/train', help="Train dataset path")
-    parser.add_argument('--validation_data_path', type=str, default='./Data/valid', help="Validation dataset path")
+    parser.add_argument('--train_data_path', type=str, default='./fer2013.csv', help="Train dataset path")
+    parser.add_argument('--validation_data_path', type=str, default='./fer2013.csv', help="Validation dataset path")
     parser.add_argument('--test_data_path', type=str, default='./Data/test', help="Test dataset path")
-    parser.add_argument('--ckp_path', type=str, default='./ckp', help="Path to checkpoint directory")
+    parser.add_argument('--ckp_dir', type=str, default='./ckp', help="Path to checkpoint directory")
     parser.add_argument('--log_path', type=str, default='./log', help="Path to log file")
     parser.add_argument('--if_pretrain', type=bool, default=False, help="Flag to use pre-trained model")
+    parser.add_argument('--ckp_path', type=str, default= './ckp/VGG_attention_1_best/VGG_attention_1_acc_0.66.pth', help="relative path to pretrain ckp")
 
     args = parser.parse_args()
 
@@ -35,10 +38,10 @@ def main():
 
     # Configure the logging to write to a file
     os.makedirs(args.log_path, exist_ok=True)
-    os.makedirs(os.path.join(args.ckp_path,'epoch'), exist_ok=True)
-    os.makedirs(os.path.join(args.ckp_path,'best'), exist_ok=True)
+    os.makedirs(os.path.join(args.ckp_dir,f'{args.model}_epoch'), exist_ok=True)
+    os.makedirs(os.path.join(args.ckp_dir,f'{args.model}_best'), exist_ok=True)
     logging.basicConfig(
-        filename=os.path.join(args.log_path, 'output.log'),
+        filename=os.path.join(args.log_path, f'{args.model}.log'),
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -49,25 +52,29 @@ def main():
 
 
     # Load data
-    train_data_path = os.path.join(args.train_data_path, "_annotations.csv")
-    validation_data_path = os.path.join(args.validation_data_path, "_annotations.csv")
+    # train_data_path = os.path.join(args.train_data_path, "_annotations.csv")
+    # validation_data_path = os.path.join(args.validation_data_path, "_annotations.csv")
     # test_data_path = os.path.join(args.test_data_path, "_annotations.csv")
-    train_loader = preprocess(train_data_path, args.train_data_path, batch_size=args.batch_size,drop_last=True)
-    valid_loader = preprocess(validation_data_path, args.validation_data_path, batch_size=args.batch_size,drop_last=True)
+    train_loader = FER_preprocess(args.train_data_path,"Training", batch_size=args.batch_size)
+    valid_loader = FER_preprocess(args.train_data_path, "PublicTest",batch_size=args.batch_size)
 
 
-    # Initialize model, loss function, and optimizer
-    model = CNN_attention_model_S().to(device)  # Move model to device
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    # Initialize model
+    model = Advanced_CNN_Attention_Model(1,7).to(device)  # Move model to device
+
 
     # # Load checkpoint TODO
     if args.if_pretrain:
-        checkpoint = torch.load("checkpoint.pth")
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        checkpoint = torch.load(args.ckp_path)
+        model.load_state_dict(checkpoint['model_state_dict'],strict=False)
+        # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # start_epoch = checkpoint['epoch'] + 1
         # loss = checkpoint['loss']
+
+    # loss function, and optimizer  
+    loss_fn = nn.CrossEntropyLoss()
+    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr,weight_decay=1e-3)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=args.lr,weight_decay=1e-4)
 
     # Train loop
     best_acc = 0
@@ -93,11 +100,10 @@ def main():
             
             optimizer.step()
             
-            predictions = model.predict(outputs)
-            labels = torch.argmax(labels, dim=1)
+            predictions = model.predict(outputs).long()
             total_correct += (predictions == labels).sum().item()
             total_loss += loss.item()
-            total_samples += args.batch_size
+            total_samples += labels.size(0)
 
         # Calculate average loss
         train_accuracy = total_correct / total_samples
@@ -107,11 +113,11 @@ def main():
 
         if epoch % 50 == 0:
             torch.save({
-                'epoch': epoch,
+                # 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-            }, os.path.join(args.ckp_path,'epoch',f"{args.model}_epoch_{epoch}.pth") )
+                # 'optimizer_state_dict': optimizer.state_dict(),
+                # 'loss': loss,
+            }, os.path.join(args.ckp_dir,f'{args.model}_epoch',f"{args.model}_epoch_{epoch}.pth") )
 
 
         model.eval()  
@@ -126,8 +132,7 @@ def main():
                 outputs = model(imgs)
                 val_loss += loss_fn(outputs, labels).item()
                 val_sample += args.batch_size
-                predictions = model.predict(outputs)
-                labels = torch.argmax(labels, dim=1)
+                predictions = model.predict(outputs).long()
                 total_correct += (predictions == labels).sum().item()
                 total_samples += labels.size(0)
             
@@ -137,11 +142,11 @@ def main():
             if accuracy > best_acc:
                 best_acc = accuracy
                 torch.save({
-                    'epoch': epoch,
+                    # 'epoch': epoch,
                     'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss,
-                }, os.path.join(args.ckp_path,'best',f"{args.model}_acc_{best_acc:.2f}.pth") )
+                    # 'optimizer_state_dict': optimizer.state_dict(),
+                    # 'loss': loss,
+                }, os.path.join(args.ckp_dir,f'{args.model}_best',f"{args.model}_acc_{best_acc:.2f}.pth") )
             logging.info(f"Validation Loss after Epoch {epoch+1}: {avg_val_loss:.4f}")
             logging.info(f"Validation accuracy after Epoch {epoch+1}: {accuracy:.4f}")
             

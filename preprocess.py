@@ -5,8 +5,47 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import OneHotEncoder
-from torchvision.transforms import Compose, ToTensor, Lambda
+from torchvision.transforms import Compose, ToTensor, Lambda, Compose, ToTensor, RandomHorizontalFlip, RandomRotation, ColorJitter, Normalize, Lambda
+# import torchvision.transforms as transforms
 
+class FER_2013(Dataset):
+    def __init__(self, dataPath,type,transform=None):
+        self.data = pd.read_csv(dataPath).dropna()
+        self.transform = transform
+        self.type = type
+        if type not in ['Training', 'PublicTest', 'PrivateTest']:
+            raise ValueError(f"Invalid type '{type}'. Must be one of ['Training', 'PublicTest', 'PrivateTest']")
+
+        # Filter rows by the 'Usage' column
+        self.data = self.data[self.data['Usage'] == type].reset_index(drop=True)
+        self.labels = torch.tensor(self.data['emotion'].values,dtype=torch.long)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+
+        # Load the image and reshape to (48, 48)
+        pixels = self.data.iloc[idx]['pixels']
+        image = np.fromstring(pixels, dtype=np.uint8, sep=' ').reshape(48, 48)
+        
+        # Resize the cropped image to 128x128
+        image = image / 255.0
+        resized_image = cv2.resize(image, (128, 128))
+        if self.type == 'Training':
+            resized_image = gaussian_noise(resized_image)
+        
+        label = self.labels[idx]
+
+
+        # Apply optional transformation (if any)
+        if self.transform:
+            resized_image = self.transform(resized_image)
+        
+
+        return resized_image, label
 
 
 class faceImg(Dataset):
@@ -56,12 +95,14 @@ class faceImg(Dataset):
         # Normalize the image
         resized_image = resized_image / 255.0
         
+        
+        resized_image = gaussian_noise(resized_image)
         # Apply optional transformation (if any)
         if self.transform:
             resized_image = self.transform(resized_image)
         
 
-        
+        label = torch.tensor(np.argmax(self.one_hot_encoded_label[idx])).long()
         return resized_image, label
 
 
@@ -79,14 +120,21 @@ def gaussian_noise(image): # usable
     return np.clip(imgWithNoise, 0, 1)
 
 
-def preprocess(dataPath, imageDir, batch_size = 32,drop_last = False): # <<<<---
+def FER_preprocess(dataPath,type, batch_size = 32,drop_last = False): # <<<<---
+    # transform = Compose([
+    #     ToTensor(),  
+    #     Lambda(lambda x: x.float()) 
+    #     ])
     transform = Compose([
         ToTensor(),  
-        Lambda(lambda x: x.float()) 
+        RandomHorizontalFlip(p=0.3),  
+        RandomRotation(degrees=5),    
+        ColorJitter(brightness=0.1, contrast=0.1, saturation=0.1, hue=0.05),
+        Lambda(lambda x: x.float()),
+        Normalize(mean=[0.5074], std=[0.2553])  # Normalization for grayscale
         ])
-    dataset = faceImg(dataPath, imageDir,transform)
+    dataset = FER_2013(dataPath,type,transform)
     dataLoader = DataLoader(dataset, batch_size, shuffle = True,drop_last=drop_last)
-    # print(dataLoader)
     return dataLoader
 
 
